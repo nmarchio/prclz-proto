@@ -1,4 +1,6 @@
 import argparse
+import logging
+from logging import info
 from typing import List 
 from pathlib import Path
 
@@ -8,12 +10,6 @@ import glob
 import os
 
 from shapely.geometry import Polygon
-
-"""
-I've just made a few edits to the arg structure in consolidate_buildings.py
-so that it is easier (for me) to run over all the region-specific subfolders
-    - Cooper
-"""
 
 GEOJSON_PATH = "../data/geojson"
 
@@ -49,7 +45,7 @@ def process_all(all_polygon_files: List[str], replace: bool) -> (str, str, str):
 
 
 def process(polygons_path: str, linestrings_path: str, output: str):
-    #info("Unifying %s, %s", polygons_path, linestrings_path)
+    info("Unifying %s, %s", polygons_path, linestrings_path)
     polygons    = gpd.read_file(polygons_path)
     polygons_count = polygons.shape[0]
     polygons_null = polygons['geometry'].isna()
@@ -63,7 +59,7 @@ def process(polygons_path: str, linestrings_path: str, output: str):
 
     concat = pd.concat([polygons, linestrings], sort=True)
     
-    #info("Saving valid geometries to %s", output)
+    info("Saving valid geometries to %s", output)
     if os.path.isfile(output):
         os.remove(output)
     concat[~concat.is_empty].to_file(output, driver='GeoJSON')
@@ -73,7 +69,11 @@ def process(polygons_path: str, linestrings_path: str, output: str):
 
 
 if __name__ == "__main__":
+    # logging
+    logging.basicConfig(format="%(asctime)s/%(filename)s/%(funcName)s | %(levelname)s - %(message)s", datefmt='%Y-%m-%d %H:%M:%S')
+    logging.getLogger().setLevel("INFO")
 
+    # read arguments
     parser = argparse.ArgumentParser(description="Consolidate all building footprint geometries across all countries")
     parser.add_argument('--country', required=True, 
           help='Which country, or All, to process. One of [All, Africa, Asia, Australia-Oceania, Central-America, Europe, North-America, South-America]')
