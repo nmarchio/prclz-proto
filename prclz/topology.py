@@ -558,8 +558,11 @@ class PlanarGraph(nx.Graph):
         nlocs = {node: (node.x, node.y) for node in self.nodes}
         edge_kwargs["label"] = "_nolegend"
         edge_kwargs["pos"] = nlocs
+        edge_kwargs.pop("node_color")
         nx.draw_networkx_edges(self, **edge_kwargs)
         node_kwargs = kwargs.copy()
+        node_kwargs.pop("width")
+        node_kwargs.pop("edge_color")
         node_kwargs["label"] = self.name
         node_kwargs["pos"] = nlocs
         nodes = nx.draw_networkx_nodes(self, **node_kwargs)
