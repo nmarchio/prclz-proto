@@ -1,4 +1,5 @@
-import typing 
+import typing
+from typing import List, Tuple  
 
 import geopandas as gpd
 from shapely.geometry import MultiPolygon, Polygon, MultiLineString, Point, LineString
@@ -25,47 +26,7 @@ TRANS_TABLE = pd.read_csv(os.path.join(ROOT, "data_processing", 'country_codes.c
 
 BLOCKS_TO_DO = gpd.read_file(os.path.join(ROOT, "reblock_sle_lbr_hti.geojson"))
 
-SLE_BLOCKS_DONE = set(['SLE.4.2.1_1_610',
-'SLE.4.2.1_1_103',
-'SLE.4.2.1_1_1681',
-'SLE.4.2.1_1_973',
-'SLE.4.2.1_1_1073',
-'SLE.4.2.1_1_1250',
-'SLE.4.2.1_1_1408',
-'SLE.4.2.1_1_762',
-'SLE.4.2.1_1_1791',
-'SLE.4.2.1_1_1801',
-'SLE.4.2.1_1_982',
-'SLE.4.2.1_1_964',
-'SLE.4.2.1_1_102',
-'SLE.4.2.1_1_962',
-'SLE.4.2.1_1_909',
-'SLE.4.2.1_1_1241',
-'SLE.4.2.1_1_1689',
-'SLE.4.2.1_1_643',
-'SLE.4.2.1_1_562',
-'SLE.4.2.1_1_107',
-'SLE.4.2.1_1_1799',
-'SLE.4.2.1_1_119',
-'SLE.4.2.1_1_1760',
-'SLE.4.2.1_1_1640',
-'SLE.4.2.1_1_971',
-'SLE.4.2.1_1_924',
-'SLE.4.2.1_1_967',
-'SLE.4.2.1_1_976',
-'SLE.4.2.1_1_987'])
-
-def add_buildings_slow(graph, buildings):
-
-    total_blgds = len(buildings)
-    print("\t\tbuildings....")
-    for i, bldg_node in enumerate(buildings):
-        print("{}/{}".format(i, total_blgds))
-        graph.add_node_to_closest_edge(bldg_node, terminal=True, fast=False)
-
-    return graph
-
-def add_buildings(graph, buildings):
+def add_buildings(graph: PlanarGraph, buildings: List[Tuple]):
 
     total_blgds = len(buildings)
     print("\t\tbuildings....")
@@ -82,7 +43,6 @@ def clean_graph(graph):
         print("Graph is connected")
         return graph, 1
     else:
-        #components = list(nx.connected_component_subgraphs(graph))
         components = graph.components(mode=igraph.WEAK)
         num_components = len(components)
         print("--DISCONNECTED: has {} components".format(num_components))
@@ -92,9 +52,9 @@ def clean_graph(graph):
 
         return graph.subgraph(comp_indices), num_components
 
-def do_reblock(graph: PlanarGraph, buildings, verbose=False):
+def do_reblock(graph: PlanarGraph, buildings: List[Tuple], verbose: bool=False):
     '''
-    Given a graph of the Parcel and the corresponding buildings,
+    Given a graph of the Parcel and the corresponding list of buildings (expressed as a list of tuple pairs),
     does the reblocking
     '''
 
@@ -120,11 +80,6 @@ def do_reblock(graph: PlanarGraph, buildings, verbose=False):
         return new_steiner, existing_steiner, terminal_points, [bldg_time, stiener_time, num_components]
     else:
         return new_steiner, existing_steiner, terminal_points
-
-    # if verbose:
-    #     return steiner_lines, terminal_points, [bldg_time, stiener_time, num_components]
-    # else:
-    #     return steiner_lines, terminal_points
 
 def check_consistent(lines: MultiLineString, block: Polygon):
 
@@ -167,29 +122,29 @@ def reblock_gadm(region, gadm_code, gadm, chunk, total_chunks):
     #bldgs, blocks, parcels, lines = i_topology_utils.load_geopandas_files(region, gadm_code, gadm) 
     bldgs, blocks, parcels, _ = i_topology_utils.load_geopandas_files(region, gadm_code, gadm) 
 
-    LIMIT = True
-    if LIMIT:
-        print("\n\nLimit blocks to specified...")
-        print("PRE-LIMIT: Block count = {} | Parcel count = {}".format(blocks.shape[0], parcels.shape[0]))
-        blocks_to_do = set(b for b in BLOCKS_TO_DO['block_id'] if gadm_code in b)
-        fn = lambda x: x in blocks_to_do
-        block_keep = blocks['block_id'].apply(fn)    
-        parcels_keep = parcels['block_id'].apply(fn) 
+    # LIMIT = True
+    # if LIMIT:
+    #     print("\n\nLimit blocks to specified...")
+    #     print("PRE-LIMIT: Block count = {} | Parcel count = {}".format(blocks.shape[0], parcels.shape[0]))
+    #     blocks_to_do = set(b for b in BLOCKS_TO_DO['block_id'] if gadm_code in b)
+    #     fn = lambda x: x in blocks_to_do
+    #     block_keep = blocks['block_id'].apply(fn)    
+    #     parcels_keep = parcels['block_id'].apply(fn) 
 
-        blocks = blocks[block_keep]
-        parcels = parcels[parcels_keep]  
+    #     blocks = blocks[block_keep]
+    #     parcels = parcels[parcels_keep]  
 
-    LIMIT_SLE = True 
-    # Drop these, bc they're done already
-    if LIMIT_SLE:
-        print("\n\nPRE-DROP SLE COMPLETED: Block count = {} | Parcel count = {}".format(blocks.shape[0], parcels.shape[0]))
+    # LIMIT_SLE = True 
+    # # Drop these, bc they're done already
+    # if LIMIT_SLE:
+    #     print("\n\nPRE-DROP SLE COMPLETED: Block count = {} | Parcel count = {}".format(blocks.shape[0], parcels.shape[0]))
 
-        fn = lambda x: x not in SLE_BLOCKS_DONE
-        block_keep = blocks['block_id'].apply(fn)    
-        parcels_keep = parcels['block_id'].apply(fn) 
+    #     fn = lambda x: x not in SLE_BLOCKS_DONE
+    #     block_keep = blocks['block_id'].apply(fn)    
+    #     parcels_keep = parcels['block_id'].apply(fn) 
 
-        blocks = blocks[block_keep]
-        parcels = parcels[parcels_keep]  
+    #     blocks = blocks[block_keep]
+    #     parcels = parcels[parcels_keep]  
 
 
     # (1-a) 
@@ -213,12 +168,6 @@ def reblock_gadm(region, gadm_code, gadm, chunk, total_chunks):
         parcels = parcels[parcels_keep]   
 
         print("POST: Block count = {} | Parcel count = {}".format(blocks.shape[0], parcels.shape[0]))
-
-    #### REMOVE THIS -- just for testing
-    # bl = "SLE.4.2.1_1_1241"
-    # blocks = blocks[blocks['block_id'] == bl]
-    # parcels = parcels[parcels['block_id'] == bl]
-    ####################################
 
     # (2) Now build the parcel graph and prep the buildings
     print("Begin calculating of parcel graphs--{}-{}".format(region, gadm))
@@ -258,11 +207,7 @@ def reblock_gadm(region, gadm_code, gadm, chunk, total_chunks):
         # Update edge types -- first check if the linestrings have natural/waterway or if they're all highways
         # This is WIP
         #if np.all(example_lines['highway']!=""):
-        if 1:
-            missing, total_block_coords = i_topology_utils.update_edge_types(example_graph, example_block, check=True)
-        else:
-            lines_pgraph = i_topology_utils.create_lines_graph(example_lines)
-            missing, total_block_coords = i_topology_utils.update_edge_types(example_graph, example_block, check=True, lines_pgraph=lines_pgraph)
+        missing, total_block_coords = i_topology_utils.update_edge_types(example_graph, example_block, check=True)
 
         # Do reblocking 
         try:
@@ -380,24 +325,3 @@ if __name__ == "__main__":
     else:
         main(file_path = args.file_path, replace=args.replace)
 
-    # region = 'Africa'
-    # gadm_code = 'KEN'
-    # gadm = 'KEN.30.10.1_1'
-
-    # bldgs, blocks, parcels, graph_parcels, lines = debug(region, gadm_code, gadm)
-    # g = graph_parcels['planar_graph'].iloc[0]
-    # block = blocks['block_geom'].iloc[0]
-
-    # #g_pre = convert_to_gpd(g)
-
-    # lines_pgraph = i_topology_utils.create_lines_graph(lines)
-    # missing, total = i_topology_utils.update_edge_types(g, block, True, lines_pgraph)
-        
-    #plot_post = plot_edge_type(g, 'post_update_edge.png')
-    # g_lines = g.get_linestrings()  
-    # parcel = gpd.GeoSeries(graph_parcels['parcel_geometry'].iloc[0])   
-    # g_lines_geo = gpd.GeoSeries(g_lines)
-
-    # ax = parcel.plot(color='blue', alpha=0.5)
-    # g_lines_geo.plot(color='blue', alpha=0.5, ax=ax)
-    # plt.show()

@@ -71,7 +71,7 @@ gadm_aggregation['success'] = gadm_aggregation['block_file_index'].notnull()
 
 # Make a smaller dataset of both failures and successes
 cols = ['geometry', 'linestring_index']
-test_fail = gadm_aggregation[ ~gadm_aggregation['success'] ][cols].iloc[0:10]
+test_fail = gadm_aggregation[ ~gadm_aggregation['success'] ][cols]
 test_success = gadm_aggregation[ gadm_aggregation['success'] ][cols].iloc[0:10]
 
 # Run through the successes, for reference
@@ -80,10 +80,18 @@ test_success = gadm_aggregation[ gadm_aggregation['success'] ][cols].iloc[0:10]
 
 # Run through the failures, for reference
 for index, geometry, ls_idx in test_fail.itertuples():
-
+    print("Index is", index)
+    print("ls_idx is", ls_idx)
     extract(linestrings, index, geometry, ls_idx, "small_test")
 
-
+# Flag for each of the failures what return type the BufferedLineDifference yields
+rv = {}
+for index, geometry, ls_idx in test_fail.itertuples():
+    try:
+        block_polygons = BufferedLineDifference().extract(geometry, linestrings.iloc[ls_idx].unary_union)
+        print("Pass :", index)
+    except:
+        print("Fail :", index)
 
 # def main(gadm_path, linestrings_path, output_dir, level, parallelism):
 #     info("Reading geospatial data from files.")

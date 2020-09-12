@@ -22,7 +22,8 @@ from i_topology import *
 import time 
 import tqdm 
 
-ROOT = "../"
+#ROOT = "../"
+ROOT = Path(__file__).resolve().parent.parent 
 DATA = os.path.join(ROOT, "data")
 TRANS_TABLE = pd.read_csv(os.path.join(ROOT, "data_processing", 'country_codes.csv'))
 
@@ -227,6 +228,13 @@ def drop_buildings_intersecting_block(parcel_geom, building_list, block_geom, bl
 # new_buildings.plot(color='red', ax=ax)
 # plt.show()
 
+def add_outside_node(block_geom, building_list):
+    bounding_rect = block_geom.minimum_rotated_rectangle
+    convex_hull = block_geom.convex_hull
+    outside_block = bounding_rect.difference(convex_hull)
+    outside_building_point = outside_block.representative_point()
+    building_list.append(outside_building_point.coords[0])
+    return building_list 
 
 def reblock_gadm(region, gadm_code, gadm, simplify, block_list=None, only_block_list=False, 
                  drop_already_completed=True, digital_globe_data=False, mins_threshold=np.inf):
@@ -284,11 +292,7 @@ def reblock_gadm(region, gadm_code, gadm, simplify, block_list=None, only_block_
 
         ## And explicitly add a dummy building outside of the block which will force Steiner Alg
         #      to connect to the outside road network
-        bounding_rect = block_geom.minimum_rotated_rectangle
-        convex_hull = block_geom.convex_hull
-        outside_block = bounding_rect.difference(convex_hull)
-        outside_building_point = outside_block.representative_point()
-        building_list.append(outside_building_point.coords[0])
+        building_list = add_outside_node(block_geom, building_list)
 
         if len(building_list) <= 1:
             continue 

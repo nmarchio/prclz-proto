@@ -5,6 +5,17 @@ import shutil
 import wget
 import pandas as pd 
 import sys 
+import argparse 
+
+# Paths
+ROOT = "../"
+BLOCK_PATH = os.path.join(ROOT, "data", "blocks")   
+GEOJSON_PATH = os.path.join(ROOT, "data", "geojson") 
+GADM_PATH = os.path.join(ROOT, "data", "GADM")
+GADM_GEOJSON_PATH = os.path.join(ROOT, "data", "geojson_gadm") 
+GEOFABRIK_PATH = os.path.join(ROOT, "data", "input")
+
+TRANS_TABLE = pd.read_csv(os.path.join(ROOT, "data_processing", 'country_codes.csv'))
 
 if not os.path.isdir("./zipfiles"):
     os.mkdir("./zipfiles")
@@ -29,14 +40,16 @@ def process_zip(country_code, replace=False):
 
     p = os.path.join("./zipfiles", "gadm36_{}_shp.zip".format(country_code))
 
+    outpath = os.path.join(GADM_PATH, country_code)
+
     with zipfile.ZipFile(p) as z:
-        if not os.path.isdir(country_code):
-            os.mkdir(country_code)
-        z.extractall(country_code)
+        if not os.path.isdir(outpath):
+            os.mkdir(outpath)
+        z.extractall(outpath)
 
 def update_gadm_data(replace=False):
     '''
-    Gets all the GADM data
+    Downloads all the GADM zip files, then unpacks the files
 
     Inputs:
         - replace: (bool) if True will replace contents, if False will skip if 
@@ -44,12 +57,10 @@ def update_gadm_data(replace=False):
 
     '''
 
-    df = pd.read_csv("../country_codes.csv")
+    df = pd.read_csv(TRANS_TABLE)
     b = ~ df['gadm_name'].isna()
     codes = df[ b ]['gadm_name'].values
     names = df[ b ]['country'].values
-
-    i = 0
 
     for country_name, country_code in zip(names, codes):
         print("\nProcessing GADM: ", country_name)
@@ -65,9 +76,7 @@ def update_gadm_data(replace=False):
 
 if __name__ == "__main__":
 
-    if len(sys.argv) == 1:
-        replace_boolean = False
-    else:
-        replace_boolean = sys.argv[1]
+    parser = argparse.ArgumentParser(description='Download GADM administrative boundaries globally')
+    parser.add_argument("--replace", action='store_true')
 
     update_gadm_data(replace_boolean)
