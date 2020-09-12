@@ -210,7 +210,8 @@ def make_series_for_xcountry(df):
 def make_box_plot_summary(df, main_title, outpath=None):
 
     # Prepare the geo dataframe
-    gdf = prep_df(df)
+    #gdf = prep_df(df)
+    gdf = df
     # gdf = gpd.GeoDataFrame(df)
     # gdf['geometry'] = gdf['geometry'].apply(loads)
     # is_neg_pop = gdf['pop_est'] < 0
@@ -308,6 +309,8 @@ def make_plots_for_aoi(aoi_df, aoi_description, update=False):
   as well
   '''
   aoi_df = aoi_df.loc[aoi_df['wkt_url'] != "not_available"]
+  aoi_df = aoi_df.loc[aoi_df['city'] != 'Seoul'] 
+  aoi_df = aoi_df.loc[aoi_df['city'] != 'Kampala'] 
   gb_mean_concat = []
   gb_median_concat = []
 

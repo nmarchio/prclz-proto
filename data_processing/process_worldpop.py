@@ -294,6 +294,9 @@ def get_gadm_level(country_code):
     # Now sort via the final digit, which indicates the level
     shp_files.sort(key=get_int)
 
+    if country_code == "ZAF":
+        return 4
+
     # Return the largest level
     return get_int(shp_files[-1])
 
@@ -475,6 +478,8 @@ def create_aoi_dataset(aoi_name, gadm_list, block_list, region):
 
 def process_aoi_dataframe(aoi_df):
     aoi_df = aoi_df.loc[aoi_df['wkt_url'] != "not_available"]
+    aoi_df = aoi_df.loc[aoi_df['city'] != 'Seoul'] 
+    aoi_df = aoi_df.loc[aoi_df['city'] != 'Kampala'] 
     if "wkt_geometry" not in aoi_df.columns:
         aoi_df['wkt_geometry'] = np.nan 
     new_df = fetch_all_wkt_url(aoi_df)

@@ -1,19 +1,32 @@
+# SHOULD BE WITH prclz-proto/prclz/ folder
+
 from numpy import linspace
 from scipy.stats.kde import gaussian_kde
 import pandas as pd 
+import geopandas as gpd 
 from pathlib import Path 
+from shapely.wkt import loads
 
 import numpy as np 
-from view import load_aoi, make_bokeh
+from view import load_aoi, make_bokeh, read_steiner 
 
 from bokeh.io import output_file, show
 from bokeh.models import ColumnDataSource, FixedTicker, PrintfTickFormatter, NumeralTickFormatter
 from bokeh.plotting import figure, save
 from bokeh.layouts import layout, column, gridplot, row 
 from bokeh.models.annotations import Title
+from bokeh.models.tools import WheelZoomTool
+from bokeh.io import export_png, export_svgs
 
 import statsmodels.api as sm
 
+def add_title(fig, main_title=None, sub_title=None):
+
+    if sub_title is not None:
+        fig.add_layout(Title(text=sub_title, text_color='black', text_font_size='8pt', text_font_style='italic'), 'above')
+
+    if main_title is not None:
+        fig.add_layout(Title(text=main_title, text_color='black',  text_font_size='16pt'), 'above')
 
 def ridge(category, data, scale=20):
     l = list(zip([category]*len(data), scale*data))
@@ -35,10 +48,48 @@ def get_color(complexity):
 HEIGHT = 900
 WIDTH = 900
 
-def make_freetown_summary():
-    p = Path("../data/LandScan_Global_2018/freetown_w_reblock.csv")
+def freetown_df():
+    '''
+    Hacky function to merge complexity and reblocking
+    for Freetown
+    '''
+    compl_path = Path("../data/complexity/Africa/SLE/complexity_SLE.4.2.1_1.csv") 
+    complexity_df = gpd.GeoDataFrame(pd.read_csv(compl_path))
+    complexity_df['geometry'] = complexity_df['geometry'].apply(loads)
+    complexity_df.geometry.crs = {'init': 'epsg:4326'}  
+    complexity_df.crs = {'init': 'epsg:4326'}
+    complexity_df['block_ext_len'] = complexity_df['geometry'].boundary.to_crs({'init': 'epsg:3395'}).length
 
-    df = pd.read_csv(str(p))
+    reblock_path = Path("../data/reblock/Africa/SLE/steiner_lines_SLE.4.2.1_1.csv")
+    reblock_df = read_steiner(reblock_path, True) 
+    reblock_df.rename(columns={'block': 'block_id'}, inplace=True)
+
+    fn = lambda x: "new" if "new" in x else "existing"
+    reblock_df['type'] = reblock_df['line_type'].apply(fn)
+    long_df = reblock_df[['type', 'road_len_m', 'block_id']].pivot(index='block_id', columns='type', values='road_len_m') 
+    long_df['existing'] = long_df['existing'].fillna(0) / 1000
+    long_df['new'] = long_df['new'].fillna(0) / 1000
+
+
+    reblock_comp = long_df.merge(complexity_df[['block_id', 'complexity']], how='left', on='block_id')
+    return reblock_comp 
+
+def make_filler_fig():
+    filler = figure(toolbar_location=None, background_fill_color='blue', background_fill_alpha=0.25,  border_fill_color='blue', border_fill_alpha=0.25, plot_width=100, plot_height=900)    
+    filler.yaxis.visible = False
+    filler.xaxis.visible = False
+    filler.text(x=[0], y=[1], text=["."]) 
+    return filler 
+
+def make_freetown_summary():
+    #p = Path("../data/LandScan_Global_2018/freetown_w_reblock.csv")
+    #df = pd.read_csv(str(p))
+
+    df = freetown_df()
+    df['existing'] = df['existing'].where(df['complexity']>2, other=0)
+    df['new'] = df['new'].where(df['complexity']>2, other=0)
+
+
     cur_df = df[['complexity', 'existing', 'new']].groupby('complexity').sum()
     cur_df['total'] = cur_df['existing'] + cur_df['new']   
     cur_df.reset_index(inplace=True)
@@ -48,25 +99,24 @@ def make_freetown_summary():
     total_new = int(cur_df['new'].sum())
     total_exist = int(cur_df['existing'].sum())
     grand_total = total_new + total_exist
-    title = "Estimated road length for universal access\nTotal existing={:,}, Total new={:,}, Grand total={:,}".format(total_exist, total_new, grand_total)
-    fig = figure(x_range=(0, cur_df['complexity'].max()), toolbar_location='above', border_fill_color='blue', border_fill_alpha=0.25, 
-                plot_height=size, plot_width=size, title=title)
-    fig.title.text_font_size = '20pt'
-    fig.title.text_font_style = 'bold'
-    fig.title.text_color = 'black'
+    main_title = "Estimated road length for universal access"
+    sub_title = "Total existing={:,}, Total new={:,}, Grand total={:,}".format(total_exist, total_new, grand_total)
+    fig = figure(x_range=(0, cur_df['complexity'].max()+1), toolbar_location='above', border_fill_color='blue', border_fill_alpha=0.25, 
+                plot_height=size, plot_width=size)
+    add_title(fig, main_title=main_title, sub_title=sub_title)
+
     cur_source = ColumnDataSource(cur_df)
 
-    #fig.vbar(x='complexity', top='existing', width=1.0, color='color', source=cur_source, line_color='black')
-    #g = fig.vbar(x='complexity', top='total', bottom='existing', width=1.0, color='black', source=cur_source, line_color='black')
-
-    #fig = figure(x_range=(0, cur_df['complexity'].max()))
-    fig.vbar_stack(['existing', 'new'], x='complexity', width=1.0, color='color', source=cur_source, line_color='black')
+    line_types = ['existing', 'new']
+    fig.vbar_stack(line_types, hatch_pattern=[' ', 'spiral'], x='complexity', width=1.0, 
+                   color='color', source=cur_source, line_color='black', legend_label=line_types)
     fig.y_range.start = 0
     fig.axis.minor_tick_line_color = None
 
-    fig.yaxis.axis_label = 'Total road length'
+    fig.yaxis.axis_label = 'Total road length (km)'
     fig.yaxis.axis_label_text_font_style = 'bold'
     fig.yaxis.axis_label_text_font_size = '14pt'
+    fig.yaxis.axis_label_text_color = 'black'
     fig.yaxis.major_label_text_font_size = '12pt'
     fig.yaxis.major_label_text_font_style = 'bold'
     fig.yaxis.major_label_text_color = 'black'
@@ -78,6 +128,7 @@ def make_freetown_summary():
     fig.xaxis.major_label_text_font_size = '12pt'
     fig.xaxis.major_label_text_font_style = 'bold'
     fig.xaxis.major_label_text_color = 'black'
+    fig.xaxis[0].ticker.desired_num_ticks = cur_df['complexity'].max()+2
 
     return fig 
 
@@ -114,10 +165,11 @@ def make_ridge_plot_w_examples(aoi_name, file_path, output_filename, add_observa
     size = 900
 
     # Make the main figure
-    p = figure(toolbar_location='above', border_fill_color='blue', border_fill_alpha=0.25, y_range=cats_str, plot_height=size, plot_width=size, x_range=(0, 1.0), title=title)
-    p.title.text_font_size = '20pt'
-    p.title.text_font_style = 'bold'
-    p.title.text_color = 'black'
+    p = figure(toolbar_location='above', border_fill_color='blue', border_fill_alpha=0.25, y_range=cats_str, plot_height=size, plot_width=size, x_range=(0, 1.0))
+    add_title(p, main_title=title, sub_title='Distribution of block density by complexity level')
+    # p.title.text_font_size = '20pt'
+    # p.title.text_font_style = 'bold'
+    # p.title.text_color = 'black'
 
     # Now make the histogram count figure
     obs_count = probly_df_gb.sum()[['count']].reset_index()
@@ -126,9 +178,13 @@ def make_ridge_plot_w_examples(aoi_name, file_path, output_filename, add_observa
     hist = figure(toolbar_location=None, border_fill_color='blue', border_fill_alpha=0.25, plot_width=100, plot_height=p.plot_height, y_range=p.y_range,
                x_range=(0, obs_count['count'].max()))
     hist.hbar(y='complexity_str', right='count', source=obs_count, height=1, line_color=None, fill_color='black', fill_alpha=.5)
+    add_title(hist, sub_title='Complexity hist.')
     hist.ygrid.grid_line_color = None
     hist.yaxis.visible = False
+    hist.xaxis[0].ticker.desired_num_ticks = 5
     hist.xaxis.major_label_orientation = np.pi/4
+    hist.xaxis.minor_tick_line_color = None 
+    hist.xaxis.major_label_text_color = 'black'
 
     for i, cat_s in enumerate(reversed(cats_str)):
 
@@ -190,14 +246,28 @@ def make_ridge_plot_w_examples(aoi_name, file_path, output_filename, add_observa
     p.xaxis.major_label_text_font_size = '12pt'
     p.xaxis.major_label_text_font_style = 'bold'
     p.xaxis.major_label_text_color = 'black'
+    #p.x_range.range_padding = 0.1
+
+    # Plot a 1,2,3,4 int on the main plot signalling where the example block is
+    text_x = []
+    text_y = []
+    text = []
+    for i, block_id in enumerate(block_list):
+        block_obs = probly_df[probly_df['block_id']==block_id].iloc[0]
+        text_x.append( block_obs['bldg_density'] )
+        text_y.append( "Complexity {}".format(block_obs['complexity']) )
+        text.append(str(i+1))
+    p.text(x=text_x, y=text_y, text=text, angle=0)
 
     # Add subplots
     sub_layout_list = make_block_example_grid(probly_df, HEIGHT, WIDTH, block_list)
-    grid = gridplot(children=sub_layout_list, ncols=2, toolbar_location=None)
+    columns = 1
+    toolbar_location = None 
+    grid = gridplot(children=sub_layout_list, ncols=columns, toolbar_location=toolbar_location)
 
     # Add subplots -- reblocked
     sub_layout_list_reblocked = make_block_example_grid(probly_df, HEIGHT, WIDTH, block_list, add_reblock=True, region='Africa')
-    grid_reblocked = gridplot(children=sub_layout_list_reblocked, ncols=2, toolbar_location=None)    
+    grid_reblocked = gridplot(children=sub_layout_list_reblocked, ncols=columns, toolbar_location=toolbar_location)    
 
 
     fig_list = [p, hist, grid]
@@ -208,20 +278,42 @@ def make_ridge_plot_w_examples(aoi_name, file_path, output_filename, add_observa
     fig10 = figure(plot_height=p.height, plot_width=p.width)
     fig11 = figure(plot_height=hist.height, plot_width=hist.width)
 
+    #right_plot = column([grid, grid_reblocked]) if columns==2 else row([grid, grid_reblocked])
+    upper_left = row([p, hist])
+
     if aoi_name == "Freetown":
-        bottom_fig = make_freetown_summary()
+        left_plot = column([upper_left, row([make_freetown_summary(), make_filler_fig()])])
+    elif aoi_name == "Monrovia":
+        probly_df.sort_values('bldg_density', inplace=True)  
+        blocks15 = list(probly_df[probly_df['complexity']==13]['block_id'].values)
+        blocks8 = list(probly_df[probly_df['complexity']==8]['block_id'].values)
+        block_list = [blocks8[0], blocks8[-1], blocks15[0], blocks15[-1]]
+
+        plot_list = make_block_example_grid(probly_df, HEIGHT, WIDTH, block_list, add_reblock=False)
+        mon_grid = gridplot(children=plot_list, ncols=2, toolbar_location=None)
+        left_plot = column([upper_left, row([mon_grid, make_filler_fig()])])
     else:
-        bottom_fig = None 
-    final_layout = gridplot([[p, hist, grid], 
-                           [bottom_fig, grid_reblocked]])
-    show(final_layout)
+        left_plot = column([ upper_left])
+
+    #final_layout = row([left_plot, right_plot])
+    final_layout = row([left_plot, grid_reblocked])
+
+    #final_layout = gridplot([[p, hist, grid], 
+    #                       [bottom_fig, grid_reblocked]])
+    #show(final_layout)
     #return fig_list, counts_df, probly_df
 
     save(final_layout, output_filename)
-    # return final_layout
+    #return final_layout
+    final_layout.background = 'white'
+    export_png(final_layout, str(output_filename).replace("html", "png"))
+
+    #export_svgs(final_layout, str(output_filename).replace("html", "svg"))
+    return final_layout
 
 
-def make_block_example_grid(aoi_gdf, total_height, total_width, block_list, add_reblock=False, region=None ):
+def make_block_example_grid(aoi_gdf, total_height, total_width, block_list, 
+                            force_title=None, add_cluster=False, add_reblock=False, region=None ):
     '''
     Start by assuming a 2x2 grid of examples
     '''
@@ -246,23 +338,44 @@ def make_block_example_grid(aoi_gdf, total_height, total_width, block_list, add_
         cur_density = cur_gdf['bldg_density'].iloc[0]
         cur_complexity = cur_gdf['complexity'].iloc[0]
         cur_count = cur_gdf['bldg_count'].iloc[0]
+        if add_cluster:
+            cur_cluster = cur_gdf['cluster'].iloc[0]
 
         #fig = make_bokeh(cur_gdf, plot_height=height, plot_width=width, bldg_alpha=1.0)
         fig, new_road_length = make_bokeh(cur_gdf, plot_height=height, plot_width=width, bldg_alpha=1.0, add_reblock=add_reblock, region=region)
-        t = Title()
+        fig.toolbar.active_scroll = WheelZoomTool()
+        #t = Title()
+
+        if cur_complexity <= 2:
+            new_road_length = 0
 
         if add_reblock:
             if new_road_length is None:
                 new_road_length = "???"
-                t.text = "Complexity = {} New road len (m) = {}".format(cur_complexity, new_road_length)
+                sub_title_text = "[{}] Compl. = {}; Density = {}%; Bldg. count = {:,}; New road len = {}m".format(i+1, cur_complexity, np.round(cur_density*100), int(cur_count), new_road_length)
             else:
-                t.text = "Complexity = {} New road len (m) = {:,}".format(cur_complexity, new_road_length)
+                #sub_title_text = "[{}] Complexity = {}; Bldg. density = {}%; Bldg. count = {:,}; New road len = {:,}m".format(i+1, cur_complexity, np.round(cur_density*100), int(cur_count), new_road_length)
+                sub_title_text = "[{}] Compl. = {}; Density = {}%; Bldg. count = {:,}; New road len = {:,}m".format(i+1, cur_complexity, np.round(cur_density*100), int(cur_count), new_road_length)
+
         else:
-            t.text = "Complexity = {} Bldg. density = {}% Bldg. count = {:,}".format(cur_complexity, np.round(cur_density*100), int(cur_count))
-        fig.title = t
+            if add_cluster:
+                sub_title_text = "[{}] Complexity = {}; Bldg. density = {}%; Cluster = {:,}".format(i+1, cur_complexity, np.round(cur_density*100), int(cur_cluster))
+            else:
+                sub_title_text = "[{}] Complexity = {}; Bldg. density = {}%; Bldg. count = {:,}".format(i+1, cur_complexity, np.round(cur_density*100), int(cur_count))
+        #sub_title_text = "[{}] Complexity = {}; Bldg. density = {}%; Bldg. count = {:,}; New road len = {:,}m".format(i+1, cur_complexity, np.round(cur_density*100), int(cur_count), new_road_length)
+
         fig.xaxis.visible = False
         fig.yaxis.visible = False 
         fig.title.text_color = 'black' 
+
+        # Main title for first observation only
+        t = "after" if add_reblock else "before"
+
+        if force_title is None:
+            main_title_text = "Example blocks {} reblocking".format(t) if i==0 else None 
+        else:
+            main_title_text = force_title
+        add_title(fig, main_title=main_title_text, sub_title=sub_title_text)
 
         # Add the plot to the below
         flat_l.append(fig)
@@ -352,46 +465,52 @@ def make_ridge_plot(aoi_name, file_path, output_filename, bandwidth=.05, add_obs
     #p.y_range.range_padding = 0.12
     save(p, output_filename)
 
-aoi_dir = Path("../data/LandScan_Global_2018/aoi_datasets/")
-# make_ridge_plot(aoi_name, file_path, output_filename)
 
-aoi_names = ['Freetown', 'Monrovia', 'Kathmandu', 'Nairobi', 'Port au Prince']
-stubs = ['freetown', 'greater_monrovia', 'kathmandu', 'nairobi', 'port_au_prince']
-file_names = ['analysis_{}.csv'.format(n) for n in stubs]
-file_paths = [aoi_dir / f for f in file_names]
-output_dir = Path("./ridge_plots_examples")
-output_dir.mkdir(parents=True, exist_ok=True)
-output_filenames = [output_dir / (n.replace(".csv", "_ridge.html")) for n in file_names]
 
-block_map = {
-     'Nairobi': ['KEN.30.3.3_1_59', 'KEN.30.17.4_1_63', 'KEN.30.10.2_1_27', 'KEN.30.16.1_1_3'],
-    'Kathmandu': ['NPL.1.1.3.31_1_343', 'NPL.1.1.3.14_1_68', 'NPL.1.1.3.31_1_3938', 'NPL.1.1.3.31_1_1253'],
-    'Monrovia': ['LBR.11.2.1_1_2563', 'LBR.11.2.1_1_282', 'LBR.11.2.1_1_1360', 'LBR.11.2.1_1_271'],
-    'Freetown': ['SLE.4.2.1_1_1060', 'SLE.4.2.1_1_1280', 'SLE.4.2.1_1_693', 'SLE.4.2.1_1_1870']
-}
 
-# block_map = {
-#     'Freetown': ['SLE.4.2.1_1_1060', 'SLE.4.2.1_1_1280', 'SLE.4.2.1_1_693', 'SLE.4.2.1_1_1870']
-# }
-for aoi_name, file_path, output_filename in zip(aoi_names, file_paths, output_filenames):
-    print("aoi_name = {}".format(aoi_name))
-    print("file_path = {}".format(file_path))
-    print("output_filename = {}".format(output_filename))
-    #make_ridge_plot(aoi_name, file_path, output_filename)
 
-    if aoi_name not in block_map.keys():
-        continue
-    else:
-        block_list = block_map[aoi_name]
-        #fig_list, counts_df = make_ridge_plot_w_examples(aoi_name, file_path, output_filename, block_list=block_list)
-    if "Freetown" in aoi_name:
-        fig_list, counts_df, gdf = make_ridge_plot_w_examples(aoi_name, file_path, output_filename, block_list=block_list)
-        break 
+if __name__ == "__main__":
+    aoi_dir = Path("../data/LandScan_Global_2018/aoi_datasets/")
+    # make_ridge_plot(aoi_name, file_path, output_filename)
 
-# aoi_gdf = load_aoi(file_path)
-# total_height = 900
-# total_width = 900
-# missing_compl = aoi_gdf['complexity'].isna()
-# aoi_gdf = aoi_gdf.loc[~missing_compl]
-# block_list = list(aoi_gdf['block_id'].values[0:4])
-# l = make_block_example_grid(aoi_gdf, total_height, total_width, block_list )
+    aoi_names = ['Freetown', 'Monrovia', 'Kathmandu', 'Nairobi', 'Port au Prince']
+    stubs = ['freetown', 'greater_monrovia', 'kathmandu', 'nairobi', 'port_au_prince']
+    file_names = ['analysis_{}.csv'.format(n) for n in stubs]
+    file_paths = [aoi_dir / f for f in file_names]
+    output_dir = Path("./ridge_plots_examples")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_filenames = [output_dir / (n.replace(".csv", "_ridge.html")) for n in file_names]
+
+    # block_map = {
+    #      'Nairobi': ['KEN.30.3.3_1_59', 'KEN.30.17.4_1_63', 'KEN.30.10.2_1_27', 'KEN.30.16.1_1_3'],
+    #     'Kathmandu': ['NPL.1.1.3.31_1_343', 'NPL.1.1.3.14_1_68', 'NPL.1.1.3.31_1_3938', 'NPL.1.1.3.31_1_1253'],
+    #     'Monrovia': ['LBR.11.2.1_1_2563', 'LBR.11.2.1_1_282', 'LBR.11.2.1_1_1360', 'LBR.11.2.1_1_271'],
+    #     'Freetown': ['SLE.4.2.1_1_1060', 'SLE.4.2.1_1_1280', 'SLE.4.2.1_1_693', 'SLE.4.2.1_1_1870']
+    # }
+    block_map = {
+        'Monrovia': ['LBR.11.2.1_1_2563', 'LBR.11.2.1_1_282', 'LBR.11.2.1_1_1360', 'LBR.11.2.1_1_271'],
+        'Freetown': ['SLE.4.2.1_1_1060', 'SLE.4.2.1_1_1280', 'SLE.4.2.1_1_693', 'SLE.4.2.1_1_1870']
+    }
+    # block_map = {
+    #     'Freetown': ['SLE.4.2.1_1_1060', 'SLE.4.2.1_1_1280', 'SLE.4.2.1_1_693', 'SLE.4.2.1_1_1870']
+    # }
+    for aoi_name, file_path, output_filename in zip(aoi_names, file_paths, output_filenames):
+        print("aoi_name = {}".format(aoi_name))
+        print("file_path = {}".format(file_path))
+        print("output_filename = {}".format(output_filename))
+
+        #make_ridge_plot(aoi_name, file_path, output_filename)
+
+        if aoi_name not in block_map.keys():
+            continue
+        else:
+            block_list = block_map[aoi_name]
+            make_ridge_plot_w_examples(aoi_name, file_path, output_filename, block_list=block_list)
+        # if "Freetown" in aoi_name:
+        #     t = make_ridge_plot_w_examples(aoi_name, file_path, output_filename, block_list=block_list)
+
+        if "Monrovia" in aoi_name:
+            block_list = block_map[aoi_name]
+            t = make_ridge_plot_w_examples(aoi_name, file_path, output_filename, block_list=block_list)
+            
+
